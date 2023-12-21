@@ -1,0 +1,70 @@
+#!/bin/bash
+
+TEMPFOLDER=temp_tests
+
+EXECUTABLE=projet
+
+exec 3>/dev/null 4>&1
+
+echo -e "\nVerification de la plateforme de test:"
+ARCH=$(cat /etc/issue 2>/dev/null)
+ARCH=${ARCH%% \\*}
+if [ "$ARCH" = "Ubuntu 22.04.3 LTS" ]; then
+	echo -e "Test exécuté sur ${ARCH}: OK" >&4
+else
+	echo -e "\nIl semble que vous exécutiez ce test sur une autre plateforme que la machine virtuelle du cours.\nIl est possible que le script de test échoue, sans qu'il y ait forcément de problème avec votre projet, si les outils nécessaires au script de test ne sont pas disponibles sur votre machine.\nA contrario, il se pourrait que le script ne renvoie aucune erreur mais que votre projet ne s'exécute pas correctement sur la machine virtuelle du cours (cela peut arriver car une erreur peut se manifester sur une plateforme mais pas sur une autre).\nPour éviter toute mauvaise surprise, il est fortement conseillé de tester votre projet sur la machine virtuelle du cours, qui sera la plateforme utilisée pour l'évaluation." >&4
+fi
+
+# Tous les tests sont effectués dans un dossier temporaire
+mkdir -p $TEMPFOLDER
+rsync -a --exclude=$TEMPFOLDER . $TEMPFOLDER/
+cd $TEMPFOLDER
+
+
+TOUT_FONCTIONNE=true
+
+
+
+echo -e "\nCompilation:" >&4
+
+if [ ! -f "Makefile" ]; then
+	echo -e "\nPas de fichier Makefile à la racine du dépôt, impossible de continuer les tests automatisés" >&4
+	echo -en "\tX"  >&3
+	echo -e "\nCommentaires:\n" >&4
+	TOUT_FONCTIONNE=false
+	cd ..
+	continue
+else
+	echo -e "\nFichier Makefile présent: OK" >&4
+	echo -en "\tV"  >&3
+fi
+
+make clean >/dev/null 2>/dev/null
+rm *.o >/dev/null 2>/dev/null
+rm $EXECUTABLE >/dev/null 2>/dev/null
+
+MAKEOUTPUT=$(make $EXECUTABLE 2>&1)
+if [ $? -ne 0 ]; then
+		echo -e "\nLa compilation de votre projet avec la commande 'make $EXECUTABLE' a échoué avec l'erreur:" >&4
+		echo -e "$MAKEOUTPUT" >&4
+		echo -e "\nImpossible de continuer les tests automatisés" >&4
+		echo -en "\tX"  >&3
+		TOUT_FONCTIONNE=false
+else
+	if [ ! -f "$EXECUTABLE" ]; then
+		echo -e "\nVérifiez votre Makefile: La commande 'make $EXECUTABLE' s'est terminée avec succès mais n'a pas généré l'exécutable '$EXECUTABLE'. Il est donc impossible de continuer les tests automatisés." >&4
+		echo -en "\tX"  >&3
+		TOUT_FONCTIONNE=false
+		continue
+	fi
+	echo -e "\nCompilation terminée avec succès" >&4
+	echo -en "\tV"  >&3
+fi
+
+if [[ $TOUT_FONCTIONNE == true ]]; then
+	echo -e "\nTests de fonctionnement:" >&4
+	python3 test_program.py ./$EXECUTABLE
+fi
+
+cd ../
+rm -r $TEMPFOLDER

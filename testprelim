@@ -1,0 +1,104 @@
+#!/bin/bash
+
+
+TEMPFOLDER=temp_tests
+
+EXECUTABLE=projet
+
+mkdir -p $TEMPFOLDER
+cp -r * $TEMPFOLDER
+cd $TEMPFOLDER
+
+	exec 3>/dev/null 4>&1
+
+	TOUT_FONCTIONNE=true
+	
+	echo -e "\nCompilation:" >&4
+
+	if [ ! -f "Makefile" ]; then
+		echo -e "\nPas de fichier Makefile à la racine du dépôt, impossible de continuer les tests automatisés" >&4
+		echo -en "\tX"  >&3
+		echo -e "\nCommentaires:\n" >&4
+		TOUT_FONCTIONNE=false
+		cd ..
+		continue
+	else
+		echo -e "\nFichier Makefile présent: OK" >&4
+		echo -en "\tV"  >&3
+	fi
+	
+	make clean >/dev/null 2>/dev/null
+	rm *.o >/dev/null 2>/dev/null
+	rm $EXECUTABLE >/dev/null 2>/dev/null
+	
+	MAKEOUTPUT=$(make $EXECUTABLE 2>&1)
+	if [ $? -ne 0 ]; then
+	    echo -e "\nLa compilation de votre projet avec la commande 'make $EXECUTABLE' a échoué avec l'erreur:" >&4
+	    echo -e "$MAKEOUTPUT" >&4
+	    echo -e "\nImpossible de continuer les tests automatisés" >&4
+	    echo -en "\tX"  >&3
+	    TOUT_FONCTIONNE=false
+	else
+		if [ ! -f "$EXECUTABLE" ]; then
+			echo -e "\nVérifiez votre Makefile: La commande 'make $EXECUTABLE' s'est terminée avec succès mais n'a pas généré l'exécutable '$EXECUTABLE'. Il est donc impossible de continuer les tests automatisés." >&4
+			echo -en "\tX"  >&3
+			continue
+		fi
+		echo -e "\nCompilation terminée avec succès" >&4
+		echo -en "\tV"  >&3
+	fi
+
+	MATCHS=("10-13" "7-10" "7-19" "13-19" "19-10")
+	NOIRS=(51 55 61 27 29)
+	BLANCS=(13 9 3 36 35)
+
+	
+	echo -e "\n\nTests des parties humain v. humain votre programme:" >&4
+	for key in "${!MATCHS[@]}"
+	do
+		echo -en "\nMatch ${MATCHS[key]}... " >&4
+
+		MATCHFILE="matchfiles/match-${MATCHS[key]}.txt"
+
+		if ! [[ -f "$MATCHFILE"  ]]; then
+			echo -e "\nLe fichier $MATCHFILE n'est pas présent dans le dossier" >&4
+			TOUT_FONCTIONNE=false
+			continue
+		fi
+
+		MATCHOUTPUT=$(timeout 5 ./$EXECUTABLE <$MATCHFILE 2>&1)
+		if [ $? -ne 0 ]; then
+				echo -e "\nLe déroulement du programme a échoué, les derniers lignes de la sortie de votre programme étaient:" >&4
+				echo "$MATCHOUTPUT" | tail -n 10 | cut -c -160 >&4
+				echo -en "\tX"  >&3
+				TOUT_FONCTIONNE=false
+		else
+			# Vérification du score
+			$(echo "$MATCHOUTPUT" | tail -n 2 | grep -q "Noir: ${NOIRS[key]}" && echo "$MATCHOUTPUT" | tail -n 2 | grep -q "Blanc: ${BLANCS[key]}")
+			if [ $? -ne 0 ]; then
+				echo -e "\nLes scores finaux ne sont pas corrects ou n'ont pas été trouvés." >&4
+				echo -e "Les dernières lignes de la sortie de votre programme étaient:" >&4
+				echo "$MATCHOUTPUT" | tail -n 2 | cut -c -100 >&4
+				echo -e "\nLes lignes attendues étaient:" >&4
+				echo -e "Noir: ${NOIRS[key]}" >&4
+				echo -e "Blanc: ${BLANCS[key]}" >&4
+				echo -en "\tX"  >&3
+				TOUT_FONCTIONNE=false
+				continue
+			fi
+			echo -e "Réussi" >&4
+			echo -en "\tV"  >&3
+		fi
+	done
+
+
+	if [[ $TOUT_FONCTIONNE == true ]]; then
+		echo -e "\nFélicitations! Votre programme passe ces tests avec succès." >&4
+	else
+		echo -e "\nMalheureusement, votre programme ne passe pas correctement ces tests." >&4
+	fi
+	echo -en "\n"  >&3
+
+
+cd ../
+rm -r $TEMPFOLDER
